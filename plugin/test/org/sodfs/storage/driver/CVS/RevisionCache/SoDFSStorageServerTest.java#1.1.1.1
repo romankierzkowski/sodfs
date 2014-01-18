@@ -1,0 +1,566 @@
+package org.sodfs.storage.driver;
+
+import java.io.FileNotFoundException;
+import java.io.IOException;
+import java.rmi.registry.LocateRegistry;
+import java.rmi.registry.Registry;
+import org.alfresco.config.ConfigElement;
+import org.alfresco.jlan.server.SrvSession;
+import org.alfresco.jlan.server.core.DeviceContext;
+import org.alfresco.jlan.server.core.SharedDevice;
+import org.alfresco.jlan.server.filesys.AccessDeniedException;
+import org.alfresco.jlan.server.filesys.FileAttribute;
+import org.alfresco.jlan.server.filesys.FileExistsException;
+import org.alfresco.jlan.server.filesys.FileInfo;
+import org.alfresco.jlan.server.filesys.FileOpenParams;
+import org.alfresco.jlan.server.filesys.FileStatus;
+import org.alfresco.jlan.server.filesys.NetworkFile;
+import org.alfresco.jlan.server.filesys.SearchContext;
+import org.alfresco.jlan.server.filesys.TreeConnection;
+import org.junit.After;
+import org.junit.Before;
+import org.junit.Test;
+import org.sodfs.meta.api.MetaServerInterface;
+import org.sodfs.meta.server.Server;
+import static org.junit.Assert.*;
+import static org.easymock.classextension.EasyMock.*;
+import static org.sodfs.storage.driver.SoDFSStorageServer.*;
+
+/**
+ *
+ * @author Roman Kierzkowski
+ */
+public class SoDFSStorageServerTest {
+    
+    private MetaServerInterface msi = null;
+    private SrvSession sess = null;
+    private TreeConnection conn = null;
+    private SoDFSDeviceContext ctx = null;
+    private SoDFSStorageServer storage; 
+
+    public static final String FILE_TO_CREATE = "tocreate.txt";
+    public static final String DIR_TO_CREATE = "dirtocreate";
+    public static final String FILE_TO_DELETE = "todelete.txt";
+    public static final String DIR_TO_DELETE = "dirtodelete";
+    public static final String FILE_TO_RENAME = "torename.txt";
+    public static final String DIR_TO_RENAME = "dirtorename";
+    public static final String NEW_FILE_NAME = "renamedfile.txt";
+    public static final String NEW_DIR_NAME = "renameddir";
+    public static final String FILE_NAME = "file.txt";
+    public static final String DIR_NAME = "dir";
+    public static final String SUB_NAME = "sub";    
+    public static final String NOT_EXISTING_DIRECTORY_NAME = "notexistdir";
+    public static final String NOT_EXISTING_FILE_NAME = "notexist.txt";    
+    public static final String NOT_EXISTING_FILE = ROOT + NOT_EXISTING_FILE_NAME;
+    public static final String NOT_EXISTING_DIRECTORY = ROOT + NOT_EXISTING_DIRECTORY_NAME;
+    public static final String EXISTING_FILE = ROOT + FILE_NAME;
+    public static final String EXISTING_DIRECTORY = ROOT + DIR_NAME;
+    public static final String EXISTING_SUBDIRECTORY = ROOT + DIR_NAME + SEPARATOR + SUB_NAME;
+    public static final String NOT_EXISTING_SUBDIRECTORY = ROOT + DIR_NAME + SEPARATOR +NOT_EXISTING_DIRECTORY_NAME;
+    public static final String EXISTING_FILE_IN_DIR = EXISTING_DIRECTORY + SEPARATOR + FILE_NAME;
+    public static final String EXISTING_FILE_IN_SUBDIR = EXISTING_SUBDIRECTORY + SEPARATOR + FILE_NAME;
+    public static final String NOT_EXISTING_FILE_IN_SUB_DIR = ROOT + DIR_NAME + SEPARATOR + SUB_NAME + SEPARATOR + NOT_EXISTING_FILE_NAME;
+    public static final String DIR_WITH_FILE = ROOT + "dirwithfile";
+    public static final String DIR_WITH_SUBDIR = ROOT + "dirwithsubdir";
+    
+
+    public SoDFSStorageServerTest() {
+        if (System.getSecurityManager() == null) {
+            SecurityManager manager = new SecurityManager();
+            System.setSecurityManager(manager);
+        }
+
+        try {
+            Registry registry = LocateRegistry.getRegistry("127.0.0.1", Server.DEFAULT_REGISTRY_PORT);
+            msi = (MetaServerInterface) registry.lookup(Server.META_SERVER_REMOTE_OBJECT_NAME);
+        } catch (Exception e) {
+            fail(e.getMessage());
+        }
+        ctx = new SoDFSDeviceContext();
+        ctx.setMetaServerInterface(msi);
+        SharedDevice sd = new SharedDeviceMock(ctx);
+        conn = new TreeConnection(sd);
+        storage = new SoDFSStorageServer();
+    }
+
+    @Before
+    public void setUp() {
+    }
+
+    @After
+    public void tearDown() {     
+    }
+    
+    /**
+     * Test of createContext method, of class SoDFSStorageServer.
+     */
+    @Test
+    public void createContext() throws Exception {
+        ConfigElement config = new ConfigElement("driver","");
+        
+        ConfigElement storageServerConfig = new ConfigElement(STORAGE_SERVER_CONFIG_ELEMENT, "");
+        ConfigElement name = new ConfigElement(STORAGE_SERVER_NAME_ELEMENT, "second");
+        ConfigElement host = new ConfigElement(STORAGE_SERVER_HOST_ELEMENT, "localhost");
+        ConfigElement port = new ConfigElement(STORAGE_SERVER_PORT_ELEMENT, "3345");
+        storageServerConfig.addChild(name);
+        storageServerConfig.addChild(host);
+        storageServerConfig.addChild(port);
+        config.addChild(storageServerConfig);
+        
+        ConfigElement metaServer = new ConfigElement(META_SERVER_CONFIG_ELEMENT,"");
+        metaServer.addAttribute(META_SERVER_HOST_ATTRIBUTE, "127.0.0.1");
+        metaServer.addAttribute(META_SERVER_PORT_ATTRIBUTE,"1099");
+        metaServer.addAttribute(META_SERVER_NAME_ATTRIBUTE,"metaServer");
+        config.addChild(metaServer);
+
+        DeviceContext context = storage.createContext("test", config);
+        assertNotNull(context);
+        assertTrue(context instanceof SoDFSDeviceContext);
+        SoDFSDeviceContext sodfsContext = (SoDFSDeviceContext) context; 
+        assertNotNull(sodfsContext.getMetaServerInterface());
+    }
+    
+    /**
+     * Test of createDirectory method, of class SoDFSStorageServer.
+     */
+    @Test
+    public void createDirectory() throws Exception {
+        // create a not existing directory in the root
+        createAndDeleteDirectory(ROOT + DIR_TO_CREATE);        
+        // create a not existing directory in a directory
+        createAndDeleteDirectory(EXISTING_DIRECTORY + SEPARATOR + DIR_TO_CREATE);          
+        // create a not existing directory in a subdirectory
+        createAndDeleteDirectory(EXISTING_SUBDIRECTORY + SEPARATOR + DIR_TO_CREATE);        
+        // try to create an existing directory in a root       
+        tryToCreateDirectory(EXISTING_DIRECTORY, FileExistsException.class);        
+        // try to create an existing subdirectory in a directory
+        tryToCreateDirectory(EXISTING_SUBDIRECTORY, FileExistsException.class);         
+        // try to create a directory in a not existing directory
+        tryToCreateDirectory(NOT_EXISTING_DIRECTORY + SEPARATOR + DIR_TO_CREATE, AccessDeniedException.class);        
+        // try to create a directory in a not existing subdirectory        
+        tryToCreateDirectory(NOT_EXISTING_SUBDIRECTORY + SEPARATOR + DIR_TO_CREATE, AccessDeniedException.class);
+    }
+    
+    private void createAndDeleteDirectory(String path) throws IOException {
+        FileOpenParams toCreate = new FileOpenParams(path, 0, 0, FileAttribute.Directory);
+        storage.createDirectory(sess, conn, toCreate);
+        storage.deleteDirectory(sess, conn, path);
+    }
+
+
+    
+    private void tryToCreateDirectory(String path, Class exception) {
+        boolean exceptionThrown = false;
+        try {
+            FileOpenParams toCreate = new FileOpenParams(path, 0, 0, FileAttribute.Directory);
+            storage.createDirectory(sess, conn, toCreate);    
+        } catch (Exception e) {
+            if (e.getClass().equals(exception)) exceptionThrown = true;
+            else fail("Expected " + exception.getCanonicalName() + ", but " + e.getClass().getCanonicalName() + " was thrown.");
+        }
+        assertTrue(exceptionThrown);
+    }
+
+    /**
+     * Test of createFile method, of class SoDFSStorageServer.
+     */
+    @Test
+    public void createFile() throws Exception {        
+        // create a not existing file in the root
+        createAndDeleteFile(ROOT + FILE_TO_CREATE);        
+        // create a not existing file in a directory
+        createAndDeleteFile(EXISTING_DIRECTORY + SEPARATOR + FILE_TO_CREATE);          
+        // create a not existing file in a subdirectory
+        createAndDeleteFile(EXISTING_SUBDIRECTORY + SEPARATOR + FILE_TO_CREATE);        
+        // try to create an existing file in a root       
+        tryToCreateFile(EXISTING_FILE, FileExistsException.class);        
+        // try to create an existing file in a directory
+        tryToCreateFile(EXISTING_FILE_IN_DIR, FileExistsException.class);        
+        // try to create an existing file in a subdirectory
+        tryToCreateFile(EXISTING_FILE_IN_SUBDIR, FileExistsException.class);        
+        // try to create a file in a not existing directory
+        tryToCreateFile(NOT_EXISTING_DIRECTORY + SEPARATOR + FILE_TO_CREATE, AccessDeniedException.class);        
+        // try to create a file in a not existing subdirectory        
+        tryToCreateFile(NOT_EXISTING_SUBDIRECTORY + SEPARATOR + FILE_TO_CREATE, AccessDeniedException.class);    
+    }
+    
+    private void createAndDeleteFile(String path) throws IOException {
+        FileOpenParams toCreate = new FileOpenParams(path, 0, 0, FileAttribute.Normal);
+        NetworkFile nf = storage.createFile(sess, conn, toCreate);
+        assertNotNull(nf);
+        storage.deleteFile(sess, conn, path);
+    }
+    
+    private void tryToCreateFile(String path, Class exception) {
+        boolean exceptionThrown = false;
+        try {
+            FileOpenParams toCreate = new FileOpenParams(path, 0, 0, FileAttribute.Normal);
+            storage.createFile(sess, conn, toCreate);    
+        } catch (Exception e) {
+            if (e.getClass().equals(exception)) exceptionThrown = true;
+            else fail("Expected " + exception.getCanonicalName() + ", but " + e.getClass().getCanonicalName() + " was thrown.");
+        }
+        assertTrue(exceptionThrown);
+    }
+
+    /**
+     * Test of deleteDirectory method, of class SoDFSStorageServer.
+     */
+    @Test
+    public void deleteDirectory() throws Exception {
+        // delete a directory in the root
+        deleteDirectoryAndCheck(ROOT + DIR_TO_DELETE);
+        // delete a directory in a directory
+        deleteDirectoryAndCheck(EXISTING_DIRECTORY + SEPARATOR + DIR_TO_DELETE);
+        // delete a directory in a sudirectory
+        deleteDirectoryAndCheck(EXISTING_SUBDIRECTORY + SEPARATOR + DIR_TO_DELETE);
+        // try to delete a not existing directory in the root
+        tryDeleteDirectory(NOT_EXISTING_DIRECTORY, AccessDeniedException.class);    
+        // try to delete a not existing subdirectory
+        tryDeleteDirectory(NOT_EXISTING_SUBDIRECTORY, AccessDeniedException.class);
+        // try to delete a directory containing a file
+        tryDeleteDirectory(DIR_WITH_FILE, AccessDeniedException.class); 
+        // try to delete a directory containging another directory
+        tryDeleteDirectory(DIR_WITH_SUBDIR, AccessDeniedException.class); 
+    }
+    
+    private void deleteDirectoryAndCheck(String path) throws IOException {
+        assertEquals(FileStatus.DirectoryExists, storage.fileExists(sess, conn, path));
+        storage.deleteDirectory(sess, conn, path);
+        assertEquals(FileStatus.NotExist, storage.fileExists(sess, conn, path));
+    }
+    
+    private void tryDeleteDirectory(String path, Class exception) {
+        boolean exceptionThrown = false;
+        try {
+            storage.deleteDirectory(sess, conn, path);
+        } catch (Exception e) {
+            if (e.getClass().equals(exception)) exceptionThrown = true;
+            else fail("Expected " + exception.getCanonicalName() + ", but " + e.getClass().getCanonicalName() + " was thrown.");
+        }
+        assertTrue(exceptionThrown);
+    }
+    
+    /**
+     * Test of deleteFile method, of class SoDFSStorageServer.
+     */
+    @Test
+    public void deleteFile() throws Exception {
+        // delete an existing file in the root
+        deleteFileAndCheck(ROOT + FILE_TO_DELETE);
+        // delete an existing file in a directory
+        deleteFileAndCheck(EXISTING_DIRECTORY + SEPARATOR + FILE_TO_DELETE);
+        // delete an existing file in a subdirectory
+        deleteFileAndCheck(EXISTING_FILE_IN_SUBDIR + SEPARATOR + FILE_TO_DELETE);
+        // try to delete a not existing file
+        tryDeleteFile(NOT_EXISTING_FILE, FileNotFoundException.class);
+        // try to delete a file from a not existing directory
+        tryDeleteFile(NOT_EXISTING_DIRECTORY + SEPARATOR + FILE_TO_DELETE, FileNotFoundException.class);
+        // try to delete a file from a not existing subdirectory
+        tryDeleteFile(NOT_EXISTING_SUBDIRECTORY + SEPARATOR + FILE_TO_DELETE, FileNotFoundException.class);
+    }
+    
+    private void deleteFileAndCheck(String path) throws IOException {
+        assertEquals(FileStatus.FileExists, storage.fileExists(sess, conn, path));
+        storage.deleteFile(sess, conn, path);
+        assertEquals(FileStatus.NotExist, storage.fileExists(sess, conn, path));
+    }
+    
+    private void tryDeleteFile(String path, Class exception) {
+        boolean exceptionThrown = false;
+        try {
+            storage.deleteFile(sess, conn, path);
+        } catch (Exception e) {
+            if (e.getClass().equals(exception)) exceptionThrown = true;
+            else fail("Expected " + exception.getCanonicalName() + ", but " + e.getClass().getCanonicalName() + " was thrown.");
+        }
+        assertTrue(exceptionThrown);
+    }
+    
+    /**
+     * Test of fileExists method, of class SoDFSStorageServer.
+     */
+    @Test
+    public void fileExists() {
+        int result;
+        result = storage.fileExists(sess, conn, ROOT);
+        assertEquals(FileStatus.DirectoryExists, result);
+        result = storage.fileExists(sess, conn, NOT_EXISTING_FILE);
+        assertEquals(FileStatus.NotExist, result);
+        result = storage.fileExists(sess, conn, NOT_EXISTING_DIRECTORY);
+        assertEquals(FileStatus.NotExist, result);
+        result = storage.fileExists(sess, conn, EXISTING_FILE);
+        assertEquals(FileStatus.FileExists, result);
+        result = storage.fileExists(sess, conn, EXISTING_DIRECTORY);
+        assertEquals(FileStatus.DirectoryExists, result);
+        result = storage.fileExists(sess, conn, EXISTING_SUBDIRECTORY);
+        assertEquals(FileStatus.DirectoryExists, result);
+        result = storage.fileExists(sess, conn, NOT_EXISTING_SUBDIRECTORY);
+        assertEquals(FileStatus.NotExist, result);
+        result = storage.fileExists(sess, conn, EXISTING_FILE_IN_DIR);
+        assertEquals(FileStatus.FileExists, result);
+        result = storage.fileExists(sess, conn, EXISTING_FILE_IN_SUBDIR);
+        assertEquals(FileStatus.FileExists, result);
+        result = storage.fileExists(sess, conn, NOT_EXISTING_FILE_IN_SUB_DIR);
+        assertEquals(FileStatus.NotExist, result);
+    }
+
+    /**
+     * Test of getFileInformation method, of class SoDFSStorageServer.
+     */
+    @Test
+    public void getFileInformation() throws Exception {
+        FileInfo result;
+        result = storage.getFileInformation(sess, conn, ROOT);
+        assertEquals(result.getFileId(), ROOT_ID);
+        assertEquals(result.getFileName(), ROOT);
+        assertEquals(result.getShortName(), ROOT);
+        assertEquals(result.getPath(), ROOT);
+        assertTrue(result.hasAttribute(FileAttribute.Directory));
+
+        result = storage.getFileInformation(sess, conn, EXISTING_DIRECTORY);
+        assertEquals(result.getFileName(), DIR_NAME);
+        assertEquals(result.getShortName(), DIR_NAME);
+        assertEquals(result.getPath(), EXISTING_DIRECTORY);
+        assertTrue(result.hasAttribute(FileAttribute.Directory));
+
+        result = storage.getFileInformation(sess, conn, EXISTING_SUBDIRECTORY);
+        assertEquals(result.getFileName(), SUB_NAME);
+        assertEquals(result.getShortName(), SUB_NAME);
+        assertEquals(result.getPath(), EXISTING_SUBDIRECTORY);
+        assertTrue(result.hasAttribute(FileAttribute.Directory));
+
+        result = storage.getFileInformation(sess, conn, EXISTING_FILE);
+        assertEquals(result.getFileName(), FILE_NAME);
+        assertEquals(result.getShortName(), FILE_NAME);
+        assertEquals(result.getPath(), EXISTING_FILE);
+        assertFalse(result.hasAttribute(FileAttribute.Directory));
+        
+        tryGetFileInfo(NOT_EXISTING_DIRECTORY, FileNotFoundException.class);
+        tryGetFileInfo(NOT_EXISTING_SUBDIRECTORY, FileNotFoundException.class);
+        tryGetFileInfo(NOT_EXISTING_FILE, FileNotFoundException.class);
+    }
+    
+    private void tryGetFileInfo(String path, Class exception) {
+        boolean exceptionThrown = false;
+        try {
+            storage.getFileInformation(sess, conn, path);
+        } catch (Exception e) {
+            if (e.getClass().equals(exception)) exceptionThrown = true;
+            else fail("Expected " + exception.getCanonicalName() + ", but " + e.getClass().getCanonicalName() + " was thrown.");
+        }
+        assertTrue(exceptionThrown);
+    }
+    
+    /**
+     * Test of setFileInformation method, of class SoDFSStorageServer.
+     */
+    @Test
+    public void setFileInformation() throws Exception {
+    
+    }
+    
+    /**
+     * Test of isReadOnly method, of class SoDFSStorageServer.
+     */
+    @Test
+    public void isReadOnly() throws Exception {
+        assertFalse(storage.isReadOnly(sess, ctx));
+    }  
+    
+    /**
+    * Test of renameFile method, of class SoDFSStorageServer.
+    */
+    @Test
+    public void renameFile() throws Exception {
+        // rename a file to the same directory        
+        renameFileAndCheck(ROOT + FILE_TO_RENAME, ROOT + NEW_FILE_NAME);
+        renameFileAndCheck(EXISTING_DIRECTORY + SEPARATOR + FILE_TO_RENAME, 
+          EXISTING_DIRECTORY + SEPARATOR + NEW_FILE_NAME);
+        renameFileAndCheck(EXISTING_SUBDIRECTORY + SEPARATOR + FILE_TO_RENAME,
+          EXISTING_SUBDIRECTORY + SEPARATOR + NEW_FILE_NAME);
+        
+        // rename a file to another directory
+        renameFileAndCheck(ROOT + NEW_FILE_NAME, 
+          EXISTING_DIRECTORY + SEPARATOR + FILE_TO_RENAME);
+        renameFileAndCheck(EXISTING_DIRECTORY + SEPARATOR + NEW_FILE_NAME, 
+          EXISTING_SUBDIRECTORY + SEPARATOR + FILE_TO_RENAME);
+        renameFileAndCheck(EXISTING_SUBDIRECTORY + SEPARATOR + NEW_FILE_NAME,
+          ROOT + FILE_TO_RENAME);
+        
+        // try to rename a file to existing name
+        tryRenameFile(ROOT + FILE_TO_RENAME, EXISTING_FILE, FileExistsException.class);
+        tryRenameFile(EXISTING_DIRECTORY + SEPARATOR + FILE_TO_RENAME, 
+          EXISTING_FILE_IN_DIR, FileExistsException.class);
+        tryRenameFile(EXISTING_SUBDIRECTORY + SEPARATOR + FILE_TO_RENAME,
+          EXISTING_FILE_IN_SUBDIR, FileExistsException.class);
+        
+        // try to rename a file to not existing directory        
+        tryRenameFile(EXISTING_DIRECTORY+ SEPARATOR + FILE_TO_RENAME , 
+          NOT_EXISTING_DIRECTORY + SEPARATOR + NEW_FILE_NAME, FileNotFoundException.class);
+        tryRenameFile(EXISTING_SUBDIRECTORY + SEPARATOR + FILE_TO_RENAME,
+          NOT_EXISTING_SUBDIRECTORY + SEPARATOR + NEW_FILE_NAME, FileNotFoundException.class);
+        
+        // try to rename a not existing file
+        tryRenameFile(NOT_EXISTING_FILE, ROOT + NEW_FILE_NAME, FileNotFoundException.class);
+        tryRenameFile(NOT_EXISTING_FILE_IN_SUB_DIR, ROOT + NEW_FILE_NAME, FileNotFoundException.class);
+        
+        // try to rename a file from not existing directory
+        tryRenameFile(NOT_EXISTING_DIRECTORY + SEPARATOR  + FILE_TO_RENAME, 
+          EXISTING_DIRECTORY + SEPARATOR + NEW_FILE_NAME, FileNotFoundException.class);
+        tryRenameFile(NOT_EXISTING_SUBDIRECTORY + SEPARATOR + FILE_TO_RENAME,
+          EXISTING_SUBDIRECTORY + SEPARATOR + NEW_FILE_NAME, FileNotFoundException.class);
+        
+        // rename a directory to different name
+        renameFileAndCheck(ROOT + DIR_TO_RENAME, ROOT + NEW_DIR_NAME);
+        renameFileAndCheck(EXISTING_DIRECTORY + SEPARATOR + DIR_TO_RENAME, 
+          EXISTING_DIRECTORY + SEPARATOR + NEW_DIR_NAME);
+        renameFileAndCheck(EXISTING_SUBDIRECTORY + SEPARATOR + DIR_TO_RENAME,
+          EXISTING_SUBDIRECTORY + SEPARATOR + NEW_DIR_NAME);
+        
+        // try to rename a directory to existing name
+        tryRenameFile(ROOT + DIR_TO_RENAME, EXISTING_DIRECTORY, FileExistsException.class);
+        tryRenameFile(EXISTING_DIRECTORY + SEPARATOR + DIR_TO_RENAME, 
+          EXISTING_FILE_IN_DIR, FileExistsException.class);
+        tryRenameFile(EXISTING_SUBDIRECTORY + SEPARATOR + DIR_TO_RENAME,
+          EXISTING_FILE_IN_SUBDIR, FileExistsException.class);
+        
+        // try to rename a not existing directory
+        tryRenameFile(NOT_EXISTING_DIRECTORY, ROOT + NEW_DIR_NAME, FileNotFoundException.class);
+        tryRenameFile(NOT_EXISTING_SUBDIRECTORY, EXISTING_SUBDIRECTORY 
+          + SEPARATOR + NEW_DIR_NAME, FileNotFoundException.class);
+        
+    }
+    
+    private void renameFileAndCheck(String oldPath, String newPath) throws IOException {
+        assertEquals(FileStatus.FileExists, storage.fileExists(sess, conn, oldPath));
+        assertEquals(FileStatus.NotExist, storage.fileExists(sess, conn, newPath));
+        storage.renameFile(sess, conn, oldPath, newPath);
+        assertEquals(FileStatus.NotExist, storage.fileExists(sess, conn, oldPath));
+        assertEquals(FileStatus.FileExists, storage.fileExists(sess, conn, newPath));
+    }
+    
+        
+    private void tryRenameFile(String oldPath, String newPath, Class exception) {
+        boolean exceptionThrown = false;
+        try {
+            storage.renameFile(sess, conn, oldPath, newPath);
+        } catch (Exception e) {
+            if (e.getClass().equals(exception)) exceptionThrown = true;
+            else fail("Expected " + exception.getCanonicalName() + ", but " + e.getClass().getCanonicalName() + " was thrown.");
+        }
+        assertTrue(exceptionThrown);
+    }
+
+    /**
+     * Test of startSearch method, of class SoDFSStorageServer.
+     */
+    @Test
+    public void startSearch() throws Exception {
+        // search a directory        
+        startSearchAndCheck(ROOT + STAR_WILDCARD,
+          FileAttribute.Normal + FileAttribute.Directory);
+        startSearchAndCheck(EXISTING_DIRECTORY + SEPARATOR + STAR_WILDCARD,
+          FileAttribute.Normal + FileAttribute.Directory);
+        startSearchAndCheck(EXISTING_SUBDIRECTORY + SEPARATOR + STAR_WILDCARD,
+          FileAttribute.Normal + FileAttribute.Directory);
+        
+        // search for an existing file
+        startSearchAndCheck(EXISTING_FILE,
+          FileAttribute.Normal + FileAttribute.Directory);
+        startSearchAndCheck(EXISTING_FILE_IN_DIR,
+          FileAttribute.Normal + FileAttribute.Directory);
+        startSearchAndCheck(EXISTING_FILE_IN_SUBDIR,
+          FileAttribute.Normal + FileAttribute.Directory);
+        
+        // search for an existing directory
+        startSearchAndCheck(ROOT,
+          FileAttribute.Normal + FileAttribute.Directory);
+        startSearchAndCheck(EXISTING_DIRECTORY,
+          FileAttribute.Normal + FileAttribute.Directory);
+        startSearchAndCheck(EXISTING_SUBDIRECTORY,
+          FileAttribute.Normal + FileAttribute.Directory);
+        
+        // try to search for an not existing directory          
+        tryStartSearch(NOT_EXISTING_DIRECTORY + SEPARATOR + STAR_WILDCARD,
+          FileAttribute.Normal + FileAttribute.Directory, FileNotFoundException.class);
+        tryStartSearch(NOT_EXISTING_SUBDIRECTORY + SEPARATOR + STAR_WILDCARD,
+          FileAttribute.Normal + FileAttribute.Directory, FileNotFoundException.class);
+        tryStartSearch(NOT_EXISTING_DIRECTORY, FileAttribute.Normal + FileAttribute.Directory,
+          FileNotFoundException.class);
+        tryStartSearch(NOT_EXISTING_SUBDIRECTORY, FileAttribute.Normal + FileAttribute.Directory,
+          FileNotFoundException.class);
+        
+        // try to search for an not existing file
+        tryStartSearch(NOT_EXISTING_FILE, FileAttribute.Normal + FileAttribute.Directory,
+          FileNotFoundException.class);
+        tryStartSearch(NOT_EXISTING_FILE_IN_SUB_DIR, FileAttribute.Normal + FileAttribute.Directory,
+          FileNotFoundException.class);
+    }  
+    
+    private void startSearchAndCheck(String path, int attr) throws FileNotFoundException {
+        SearchContext context = storage.startSearch(sess, conn, path, attr);
+        assertTrue(context instanceof SoDFSSearchContext);
+        assertTrue(context.hasMoreFiles());
+    }
+    
+    private void tryStartSearch(String path, int attr, Class exception) {
+        boolean exceptionThrown = false;
+        try {
+            storage.startSearch(sess, conn, path, attr);
+        } catch (Exception e) {
+            if (e.getClass().equals(exception)) exceptionThrown = true;
+            else fail("Expected " + exception.getCanonicalName() + ", but " + e.getClass().getCanonicalName() + " was thrown.");
+        }
+        assertTrue(exceptionThrown);
+    }
+//
+//    /**
+//     * Test of openFile method, of class SoDFSStorageServer.
+//     */
+//    @Test
+//    public void openFile() throws Exception {
+//    }
+//
+//    /**
+//     * Test of readFile method, of class SoDFSStorageServer.
+//     */
+//    @Test
+//    public void readFile() throws Exception {
+//    }
+//
+//    /**
+//     * Test of seekFile method, of class SoDFSStorageServer.
+//     */
+//    @Test
+//    public void seekFile() throws Exception {
+//    }
+//
+//    /**
+//     * Test of truncateFile method, of class SoDFSStorageServer.
+//     */
+//    @Test
+//    public void truncateFile() throws Exception {
+//    }
+//
+//    /**
+//     * Test of writeFile method, of class SoDFSStorageServer.
+//     */
+//    @Test
+//    public void writeFile() throws Exception {
+//    }
+//
+//    /**
+//     * Test of closeFile method, of class SoDFSStorageServer.
+//     */
+//    @Test
+//    public void closeFile() throws Exception {
+//    }
+//
+//    /**
+//     * Test of flushFile method, of class SoDFSStorageServer.
+//     */
+//    @Test
+//    public void flushFile() throws Exception {
+//    }    
+}

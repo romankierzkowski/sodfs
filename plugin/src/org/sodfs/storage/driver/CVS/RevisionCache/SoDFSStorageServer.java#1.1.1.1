@@ -1,0 +1,487 @@
+/*
+ * To change this template, choose Tools | Templates
+ * and open the template in the editor.
+ */
+
+package org.sodfs.storage.driver;
+
+import java.rmi.RemoteException;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+import org.sodfs.storage.*;
+import java.io.FileNotFoundException;
+import java.io.IOException;
+import java.io.Serializable;
+import java.rmi.registry.LocateRegistry;
+import java.rmi.registry.Registry;
+import java.util.ArrayList;
+import org.alfresco.config.ConfigElement;
+import org.alfresco.jlan.debug.Debug;
+import org.alfresco.jlan.server.SrvSession;
+import org.alfresco.jlan.server.core.DeviceContext;
+import org.alfresco.jlan.server.core.DeviceContextException;
+import org.alfresco.jlan.server.filesys.DiskInterface;
+import org.alfresco.jlan.server.filesys.FileAttribute;
+import org.alfresco.jlan.server.filesys.FileInfo;
+import org.alfresco.jlan.server.filesys.FileName;
+import org.alfresco.jlan.server.filesys.FileOpenParams;
+import org.alfresco.jlan.server.filesys.FileStatus;
+import org.alfresco.jlan.server.filesys.FileType;
+import org.alfresco.jlan.server.filesys.NetworkFile;
+import org.alfresco.jlan.server.filesys.SearchContext;
+import org.alfresco.jlan.server.filesys.TreeConnection;
+import org.alfresco.jlan.util.WildCard;
+import org.sodfs.meta.api.MetaServerInterface;
+import org.sodfs.meta.api.entities.DirectoryEntity;
+import org.sodfs.meta.api.entities.FileEntity;
+import org.sodfs.meta.persistance.Directory;
+import org.sodfs.meta.persistance.File;
+
+/**
+ *
+ * @author Roman
+ */
+public class SoDFSStorageServer implements DiskInterface {
+    
+    public static final String STORAGE_SERVER_CONFIG_ELEMENT = "storage-server-config";
+    public static final String STORAGE_SERVER_HOST_ELEMENT = "host";
+    public static final String STORAGE_SERVER_NAME_ELEMENT = "name";
+    public static final String STORAGE_SERVER_PORT_ELEMENT = "port";
+    
+    public static final String META_SERVER_CONFIG_ELEMENT = "meta-server";
+    public static final String META_SERVER_HOST_ATTRIBUTE = "host";
+    public static final String META_SERVER_NAME_ATTRIBUTE = "name";
+    public static final String META_SERVER_PORT_ATTRIBUTE = "port";
+    
+    public static final String STAR_WILDCARD = "*";
+    public static final String SEPARATOR = "\\";
+    public static final int ROOT_ID = 0;
+    public static final String ROOT = SEPARATOR;
+
+    public void closeFile(SrvSession arg0, TreeConnection arg1, NetworkFile arg2) throws IOException {
+        System.out.println("[closeFile " + System.currentTimeMillis() +  "]: " + arg2.getFullName());
+    }
+
+    public void createDirectory(SrvSession sess, TreeConnection conn, FileOpenParams openParams) throws IOException {
+        System.out.println("[createDirectory " + System.currentTimeMillis() +  "]: " + openParams.getFullPath());
+        String parent;
+        String name;
+        String path = openParams.getFullPath();
+        int i = path.lastIndexOf("\\");
+        name = path.substring(i + 1, path.length());        
+        if (i > 0)
+        {            
+            parent = path.substring(0,i);
+        } else {
+            parent = "\\";
+        }        
+        try {
+            SoDFSDeviceContext context = (SoDFSDeviceContext) conn.getContext();
+            MetaServerInterface msi = context.getMetaServerInterface();
+            msi.createDirectory(parent, name, FileAttribute.Directory);
+        } catch (RemoteException ex) {
+            Logger.getLogger(SoDFSStorageServer.class.getName()).log(Level.SEVERE, null, ex);
+        } 
+    }
+
+    public NetworkFile createFile(SrvSession sess, TreeConnection conn, FileOpenParams arg2) throws IOException {
+        System.out.println("[createFile " + System.currentTimeMillis() +  "]: " + arg2.getFullPath());
+        NetworkFile nf = new NetworkFile(arg2.getPath()) {
+
+            @Override
+            public void openFile(boolean arg0) throws IOException {
+                throw new UnsupportedOperationException("Not supported yet.");
+            }
+
+            @Override
+            public int readFile(byte[] arg0, int arg1, int arg2, long arg3) throws IOException {
+                throw new UnsupportedOperationException("Not supported yet.");
+            }
+
+            @Override
+            public void writeFile(byte[] arg0, int arg1, int arg2, long arg3) throws IOException {
+                throw new UnsupportedOperationException("Not supported yet.");
+            }
+
+            @Override
+            public long seekFile(long arg0, int arg1) throws IOException {
+                throw new UnsupportedOperationException("Not supported yet.");
+            }
+
+            @Override
+            public void flushFile() throws IOException {
+                throw new UnsupportedOperationException("Not supported yet.");
+            }
+
+            @Override
+            public void truncateFile(long arg0) throws IOException {
+                throw new UnsupportedOperationException("Not supported yet.");
+            }
+
+            @Override
+            public void closeFile() throws IOException {
+                throw new UnsupportedOperationException("Not supported yet.");
+            }
+        };
+        MetaServerInterface msi = getRemoteInterface(conn);
+        String parent;
+        String name;
+        String path = arg2.getFullPath();
+        int i = path.lastIndexOf("\\");
+        name = path.substring(i + 1, path.length());        
+        if (i > 0)
+        {            
+            parent = path.substring(0,i);
+        } else {
+            parent = "\\";
+        }   
+        msi.createFile(name, parent);
+        Serializable s = msi.getFileInformation(arg2.getFullPath());                    
+        if (s instanceof Directory) {
+            DirectoryEntity dir = (Directory) s;
+            nf.setFileId(dir.getDirectoryId().intValue());
+            nf.setDirectoryId(dir.getDirectoryId().intValue());
+        }
+        else {
+            File fil = (File) s;
+            nf.setFileId(fil.getFileId().intValue());
+        } 
+        nf.setFullName(arg2.getFullPath());
+        nf.setName(arg2.getPath());
+        nf.setAttributes(FileAttribute.Directory);
+        return nf;
+    }
+
+    public void deleteDirectory(SrvSession sess, TreeConnection conn, String path) throws IOException {
+        System.out.println("[deleteDirectory " + System.currentTimeMillis() +  "]: " + path);
+        try {
+            SoDFSDeviceContext context = (SoDFSDeviceContext) conn.getContext();
+            MetaServerInterface msi = context.getMetaServerInterface();
+            msi.deleteDirectory(path);
+        } catch (RemoteException ex) {
+            Logger.getLogger(SoDFSStorageServer.class.getName()).log(Level.SEVERE, null, ex);
+        } 
+    }
+
+    public void deleteFile(SrvSession sess, TreeConnection conn, String path) throws IOException {
+        System.out.println("[deleteFile " + System.currentTimeMillis() + "]: " + path);
+        try {
+            SoDFSDeviceContext context = (SoDFSDeviceContext) conn.getContext();
+            MetaServerInterface msi = context.getMetaServerInterface();
+            String parent;
+            String name;
+            int i = path.lastIndexOf("\\");
+            name = path.substring(i + 1, path.length());        
+            if (i > 0)
+            {            
+                parent = path.substring(0,i);
+            } else {
+                parent = "\\";
+            }   
+            msi.deleteFile(parent,name);
+        } catch (RemoteException ex) {
+            Logger.getLogger(SoDFSStorageServer.class.getName()).log(Level.SEVERE, null, ex);
+        } 
+    }
+
+    public int fileExists(SrvSession sess, TreeConnection conn, String path) {        
+        int result = FileStatus.Unknown; 
+        if (path != null) {
+            if (path.length() == 0){
+                result = FileStatus.NotExist;
+            } else if (path.equals("\\")) {
+                result = FileStatus.DirectoryExists;
+            } else 
+            {
+                try {
+                    MetaServerInterface msi = getRemoteInterface(conn);
+                    result = msi.fileExist(path);                    
+                } catch (RemoteException ex) {
+                    Logger.getLogger(SoDFSStorageServer.class.getName()).log(Level.SEVERE, null, ex);
+                }
+            }   
+        }
+        System.out.println("[fileExist " + System.currentTimeMillis() +  "]: " + path + " file exist: " + !(result == FileStatus.NotExist));
+        return result;
+    }
+
+    public void flushFile(SrvSession arg0, TreeConnection arg1, NetworkFile arg2) throws IOException {
+        System.out.println("[flushFile " + System.currentTimeMillis() +  "]: " + arg2.getFullName());
+    }
+
+    public FileInfo getFileInformation(SrvSession sess, TreeConnection conn, String path) throws IOException {        
+        FileInfo result = new FileInfo();
+        if (path != null) {
+            if (path.length() == 0){
+                //path = "\\";
+                //System.out.println("[getFileInformation " + System.currentTimeMillis() +  "]: pusty lancuch");
+            } 
+            try {
+                MetaServerInterface msi = getRemoteInterface(conn);
+                Serializable s = msi.getFileInformation(path);   
+                if (s instanceof Directory) {
+                    result = getDirectoryInfo(path, (Directory) s);
+                }
+                else if (s instanceof org.sodfs.meta.persistance.File) {
+                    result = getFileInfo(path, (org.sodfs.meta.persistance.File) s);
+                    result.setFileType(FileType.RegularFile);
+                    result.setFileAttributes(FileAttribute.Normal);
+                    
+                }
+            }            
+            catch (RemoteException ex) {
+                ex.printStackTrace();
+                Logger.getLogger(SoDFSStorageServer.class.getName()).log(Level.SEVERE, null, ex);
+            } catch (IOException e) {
+                throw e;
+            }   
+        } else {
+            throw new NullPointerException();
+        }
+        System.out.println("[getFileInformation " + System.currentTimeMillis() +  "]: " 
+                                                  + path + "|" + result.getFileName() + "|" + result.getPath());
+        
+        return result;        
+    }
+
+    public boolean isReadOnly(SrvSession arg0, DeviceContext arg1) throws IOException {
+        System.out.println("[isReadOnly]");
+        return false;
+    }
+
+    public NetworkFile openFile(SrvSession arg0, TreeConnection conn, FileOpenParams arg2) throws IOException {
+        System.out.println("[openFile " + System.currentTimeMillis() +  "]: " + arg2.getFullPath());
+         
+        NetworkFile nf = new NetworkFile(arg2.getFullPath()) {
+
+            @Override
+            public void openFile(boolean arg0) throws IOException {
+                throw new UnsupportedOperationException("Not supported yet.");
+            }
+
+            @Override
+            public int readFile(byte[] arg0, int arg1, int arg2, long arg3) throws IOException {
+                throw new UnsupportedOperationException("Not supported yet.");
+            }
+
+            @Override
+            public void writeFile(byte[] arg0, int arg1, int arg2, long arg3) throws IOException {
+                throw new UnsupportedOperationException("Not supported yet.");
+            }
+
+            @Override
+            public long seekFile(long arg0, int arg1) throws IOException {
+                throw new UnsupportedOperationException("Not supported yet.");
+            }
+
+            @Override
+            public void flushFile() throws IOException {
+                throw new UnsupportedOperationException("Not supported yet.");
+            }
+
+            @Override
+            public void truncateFile(long arg0) throws IOException {
+                throw new UnsupportedOperationException("Not supported yet.");
+            }
+
+            @Override
+            public void closeFile() throws IOException {
+                throw new UnsupportedOperationException("Not supported yet.");
+            }
+        };
+        nf.setClosed(false);
+        MetaServerInterface msi = getRemoteInterface(conn);   
+        Serializable s = msi.getFileInformation(arg2.getFullPath());                    
+        if (s instanceof Directory) {
+            DirectoryEntity dir = (Directory) s;
+            nf.setFileId(dir.getDirectoryId().intValue());
+            nf.setDirectoryId(dir.getDirectoryId().intValue());
+        }
+        else {
+            File fil = (File) s;
+            nf.setFileId(fil.getFileId().intValue());
+        } 
+        nf.setFullName(arg2.getFullPath());
+        nf.setName(arg2.getPath());
+        nf.setAttributes(FileAttribute.Directory);
+        
+        return nf;
+        
+    }
+
+    public int readFile(SrvSession arg0, TreeConnection arg1, NetworkFile arg2, byte[] arg3, int arg4, int arg5, long arg6) throws IOException {
+        System.out.println("[readFile " + System.currentTimeMillis() +  "]: " + arg2.getFullName());
+        return 0;
+    }
+
+    public void renameFile(SrvSession sess, TreeConnection conn, String oldPath, String newPath) throws IOException {
+        System.out.println("[renameFile " + System.currentTimeMillis() +  "]: " + oldPath + " " + newPath);
+        try {
+            MetaServerInterface msi = getRemoteInterface(conn);            
+            msi.renameFile(oldPath, newPath);            
+        } catch (RemoteException ex) {
+            Logger.getLogger(SoDFSStorageServer.class.getName()).log(Level.SEVERE, null, ex);
+        } 
+    }
+
+    public long seekFile(SrvSession arg0, TreeConnection arg1, NetworkFile arg2, long arg3, int arg4) throws IOException {
+        System.out.println("[seekFile " + System.currentTimeMillis() +  "]: " + arg2.getFullName());
+        return 0;
+    }
+
+    public void setFileInformation(SrvSession sess, TreeConnection tree, String path, FileInfo fi) throws IOException {
+        System.out.println("[setFileInformation " + System.currentTimeMillis() +  "]: " + fi.getFileName());
+    }
+
+    public SearchContext startSearch(SrvSession sess, TreeConnection conn, String path, int attr) throws FileNotFoundException {        
+        System.out.println("[startSearch " + System.currentTimeMillis() +  "]: " + path);
+        ArrayList<FileEntity> files = null;
+        ArrayList<DirectoryEntity> directories = null;        
+        try {            
+            MetaServerInterface msi = getRemoteInterface(conn);
+            if (WildCard.containsWildcards(path)) {                
+                path = FileName.splitPath(path)[0];            
+                files = msi.listFilesFromDirectory(path, "\\", attr);
+                directories = msi.listSubDirectoriesFromDirectory(path, "\\", attr);
+            }
+            else 
+            {                
+                Serializable s = msi.getFileInformation(path);                    
+                if (s instanceof Directory) {
+                    directories = new ArrayList<DirectoryEntity>();
+                    directories.add((DirectoryEntity) s);
+                }
+                else {
+                    files = new ArrayList<FileEntity>();
+                    files.add((FileEntity) s);
+                }                
+            }
+
+        } catch (RemoteException ex) {
+            Logger.getLogger(SoDFSStorageServer.class.getName()).log(Level.SEVERE, null, ex);
+        } 
+        return new SoDFSSearchContext(FileName.splitPath(path)[0], directories, files);
+    }
+
+    public void truncateFile(SrvSession arg0, TreeConnection arg1, NetworkFile arg2, long arg3) throws IOException {
+        
+    }
+
+    public int writeFile(SrvSession arg0, TreeConnection arg1, NetworkFile arg2, byte[] arg3, int arg4, int arg5, long arg6) throws IOException {       
+        return 0;
+    }
+
+    public DeviceContext createContext(String shareName, ConfigElement config) throws DeviceContextException {
+//        try {
+//            System.setErr(new PrintStream(new FileOutputStream("err.txt")));
+//                    } catch (FileNotFoundException ex) {
+//            Logger.getLogger(SoDFSStorageServer.class.getName()).log(Level.SEVERE, null, ex);
+//        }
+        ConfigElement ms = config.getChild("meta-server");
+        String metaHost = ms.getAttribute("host");
+        int metaPort = 1099;
+        try {
+            metaPort = Integer.parseInt(ms.getAttribute("port"));
+        } catch (Exception e) {
+            Debug.println(e);
+            throw new DeviceContextException("Port not defined or bad value porvided.");
+        }
+        String metaName = ms.getAttribute("name");
+
+        if (System.getSecurityManager() == null) {
+            System.setSecurityManager(new SecurityManager());
+        }
+        MetaServerInterface msi = null;
+        try {
+            Registry registry = LocateRegistry.getRegistry(metaHost, metaPort);
+            msi = (MetaServerInterface) registry.lookup(metaName);
+        } catch (Exception e) {
+            Debug.println(e);
+            throw new DeviceContextException("Meta-server can not be localised.");
+        }
+        ConfigElement ss = config.getChild("storage-server-config");
+        String storageName = ss.getChild("name").getValue();
+        String storageHost = ss.getChild("host").getValue();
+        int storagePort = Integer.parseInt(ss.getChild("port").getValue());
+        try {
+            msi.registerStorageServer(storageName, storageHost, storagePort);
+        } catch (RemoteException ex) {
+            Debug.println(ex);
+        }
+        Debug.println("[SODFS] " + shareName + " started");
+        SoDFSDeviceContext context = new SoDFSDeviceContext();
+        context.setMetaServerInterface(msi);
+        context.enableChangeHandler(true);
+        
+        return context;
+    }    
+
+    public void treeOpened(SrvSession arg0, TreeConnection arg1) {
+        System.out.println("treeOpened");
+    }
+
+    public void treeClosed(SrvSession arg0, TreeConnection arg1) {
+        System.out.println("treeClosed");
+    }
+
+    private MetaServerInterface getRemoteInterface(TreeConnection conn) {
+        SoDFSDeviceContext context = (SoDFSDeviceContext) conn.getContext();
+        MetaServerInterface msi = context.getMetaServerInterface();
+        return msi;
+    }
+
+    private FileInfo getDirectoryInfo(String path, Directory dir) {
+        FileInfo result = new FileInfo();
+        
+        result.setDirectoryId(dir.getDirectoryId().intValue());
+        result.setFileId(dir.getDirectoryId().intValue());
+        //String fullPath = "" + path + "\\" + dir.getName();
+        //result.setFileId(fullPath.hashCode());
+        
+        // name and path
+        result.setShortName(dir.getName());
+        result.setPath(path);
+        result.setFileName(dir.getName());
+
+        // times
+        result.setCreationDateTime(dir.getCreated().getTime());
+        result.setChangeDateTime(dir.getModified().getTime());
+        result.setAccessDateTime(dir.getAccessed().getTime());
+
+        // size
+        result.setSize(dir.getNominalSize());
+        result.setAllocationSize(dir.getAllocationSize());
+
+        // attributes
+        result.setMode(dir.getMode());
+        result.setFileAttributes(dir.getAttribute());
+        
+        return result;
+    }
+
+    private FileInfo getFileInfo(String path, org.sodfs.meta.persistance.File f) {
+        FileInfo result = new FileInfo();
+        
+        result.setFileId(f.getFileId().intValue());        
+        
+        // name and path
+        result.setShortName(f.getName());
+        result.setPath(path);
+        result.setFileName(f.getName());
+
+        // times
+        result.setCreationDateTime(f.getCreated().getTime());
+        result.setChangeDateTime(f.getModified().getTime());
+        result.setAccessDateTime(f.getAccessed().getTime());
+
+        // size
+        result.setSize(f.getNominalSize());
+        result.setAllocationSize(f.getAllocationSize());
+        result.setFileSize(f.getNominalSize());
+
+        //attributes
+        result.setMode(f.getMode());
+        result.setFileAttributes(f.getAttribute());
+        return result;
+    }
+}

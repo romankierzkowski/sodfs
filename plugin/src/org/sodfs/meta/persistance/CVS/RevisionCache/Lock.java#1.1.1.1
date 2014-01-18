@@ -1,0 +1,129 @@
+/*
+ * To change this template, choose Tools | Templates
+ * and open the template in the editor.
+ */
+
+package org.sodfs.meta.persistance;
+
+import java.io.Serializable;
+import javax.persistence.Column;
+import javax.persistence.Entity;
+import javax.persistence.Id;
+import javax.persistence.JoinColumn;
+import javax.persistence.ManyToOne;
+import javax.persistence.NamedQueries;
+import javax.persistence.NamedQuery;
+import javax.persistence.Table;
+
+/**
+ *
+ * @author Roman
+ */
+@Entity
+@Table(name = "locks")
+@NamedQueries({@NamedQuery(name = "Lock.findByOffset", query = "SELECT l FROM Lock l WHERE l.offset = :offset"), @NamedQuery(name = "Lock.findByRangeLength", query = "SELECT l FROM Lock l WHERE l.rangeLength = :rangeLength"), @NamedQuery(name = "Lock.findByPid", query = "SELECT l FROM Lock l WHERE l.pid = :pid"), @NamedQuery(name = "Lock.findByLockId", query = "SELECT l FROM Lock l WHERE l.lockId = :lockId")})
+public class Lock implements Serializable {
+    private static final long serialVersionUID = 1L;
+    @Column(name = "offset", nullable = false)
+    private long offset;
+    @Column(name = "range_length", nullable = false)
+    private long rangeLength;
+    @Column(name = "pid")
+    private Integer pid;
+    @Id
+    @Column(name = "lock_id", nullable = false)
+    private Long lockId;
+    @JoinColumn(name = "file", referencedColumnName = "file_id")
+    @ManyToOne
+    private File file;
+    @JoinColumn(name = "storage_server", referencedColumnName = "storage_id")
+    @ManyToOne
+    private StorageServer storageServer;
+
+    public Lock() {
+    }
+
+    public Lock(Long lockId) {
+        this.lockId = lockId;
+    }
+
+    public Lock(Long lockId, long offset, long rangeLength) {
+        this.lockId = lockId;
+        this.offset = offset;
+        this.rangeLength = rangeLength;
+    }
+
+    public long getOffset() {
+        return offset;
+    }
+
+    public void setOffset(long offset) {
+        this.offset = offset;
+    }
+
+    public long getRangeLength() {
+        return rangeLength;
+    }
+
+    public void setRangeLength(long rangeLength) {
+        this.rangeLength = rangeLength;
+    }
+
+    public Integer getPid() {
+        return pid;
+    }
+
+    public void setPid(Integer pid) {
+        this.pid = pid;
+    }
+
+    public Long getLockId() {
+        return lockId;
+    }
+
+    public void setLockId(Long lockId) {
+        this.lockId = lockId;
+    }
+
+    public File getFile() {
+        return file;
+    }
+
+    public void setFile(File file) {
+        this.file = file;
+    }
+
+    public StorageServer getStorageServer() {
+        return storageServer;
+    }
+
+    public void setStorageServer(StorageServer storageServer) {
+        this.storageServer = storageServer;
+    }
+
+    @Override
+    public int hashCode() {
+        int hash = 0;
+        hash += (lockId != null ? lockId.hashCode() : 0);
+        return hash;
+    }
+
+    @Override
+    public boolean equals(Object object) {
+        // TODO: Warning - this method won't work in the case the id fields are not set
+        if (!(object instanceof Lock)) {
+            return false;
+        }
+        Lock other = (Lock) object;
+        if ((this.lockId == null && other.lockId != null) || (this.lockId != null && !this.lockId.equals(other.lockId))) {
+            return false;
+        }
+        return true;
+    }
+
+    @Override
+    public String toString() {
+        return "org.sodfs.meta.persistance.Lock[lockId=" + lockId + "]";
+    }
+
+}

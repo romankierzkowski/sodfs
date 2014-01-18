@@ -1,0 +1,77 @@
+/*
+ * To change this template, choose Tools | Templates
+ * and open the template in the editor.
+ */
+
+package org.sodfs.meta.persistance;
+
+import java.io.Serializable;
+import javax.persistence.Column;
+import javax.persistence.Embeddable;
+import org.sodfs.meta.api.entities.ReplicaPKEntity;
+
+/**
+ *
+ * @author Roman
+ */
+@Embeddable
+public class ReplicaPK implements ReplicaPKEntity, Serializable {
+    @Column(name = "file", nullable = false)
+    private long file;
+    @Column(name = "storage_server", nullable = false)
+    private long storageServer;
+
+    public ReplicaPK() {
+    }
+
+    public ReplicaPK(long file, long storageServer) {
+        this.file = file;
+        this.storageServer = storageServer;
+    }
+
+    public long getFile() {
+        return file;
+    }
+
+    public void setFile(long file) {
+        this.file = file;
+    }
+
+    public long getStorageServer() {
+        return storageServer;
+    }
+
+    public void setStorageServer(long storageServer) {
+        this.storageServer = storageServer;
+    }
+
+    @Override
+    public int hashCode() {
+        int hash = 0;
+        hash += (int) file;
+        hash += (int) storageServer;
+        return hash;
+    }
+
+    @Override
+    public boolean equals(Object object) {
+        // TODO: Warning - this method won't work in the case the id fields are not set
+        if (!(object instanceof ReplicaPK)) {
+            return false;
+        }
+        ReplicaPK other = (ReplicaPK) object;
+        if (this.file != other.file) {
+            return false;
+        }
+        if (this.storageServer != other.storageServer) {
+            return false;
+        }
+        return true;
+    }
+
+    @Override
+    public String toString() {
+        return "org.sodfs.meta.persistance.ReplicaPK[file=" + file + ", storageServer=" + storageServer + "]";
+    }
+
+}

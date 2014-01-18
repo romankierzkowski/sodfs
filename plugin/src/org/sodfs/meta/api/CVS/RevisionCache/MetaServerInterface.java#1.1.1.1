@@ -1,0 +1,45 @@
+/*
+ * To change this template, choose Tools | Templates
+ * and open the template in the editor.
+ */
+
+package org.sodfs.meta.api;
+
+import java.io.FileNotFoundException;
+import java.io.Serializable;
+import java.rmi.Remote;
+import java.rmi.RemoteException;
+import java.util.ArrayList;
+import org.alfresco.jlan.server.filesys.FileInfo;
+import org.sodfs.meta.api.entities.DirectoryEntity;
+import org.sodfs.meta.api.entities.FileEntity;
+import org.sodfs.meta.api.entities.StorageServerEntity;
+
+/**
+ *
+ * @author Roman
+ */
+public interface MetaServerInterface extends Remote {
+
+
+    public void createFile(String name, String parent) throws RemoteException, java.io.IOException;
+
+    public void deleteDirectory(String path) throws RemoteException, java.io.IOException;
+
+    public void deleteFile(String parent, String name) throws RemoteException, java.io.IOException;
+
+    public void renameFile(String oldPath, String newPath) throws RemoteException, FileNotFoundException;
+
+    Serializable getFileInformation(String path) throws RemoteException, FileNotFoundException;
+
+    int fileExist(String path) throws RemoteException;
+
+    ArrayList<FileEntity>  listFilesFromDirectory(String path, String separator, int attr) throws RemoteException, FileNotFoundException;
+    
+    ArrayList<DirectoryEntity>  listSubDirectoriesFromDirectory(String path, String separator, int attr) throws RemoteException, FileNotFoundException;
+    
+    StorageServerEntity registerStorageServer(String name, String address, int port) throws RemoteException;
+
+    void createDirectory(String path, String name, int attr) throws RemoteException, java.io.IOException;
+    
+}

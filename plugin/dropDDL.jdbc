@@ -1,0 +1,16 @@
+ALTER TABLE replicas DROP CONSTRAINT FK_replicas_file
+ALTER TABLE replicas DROP CONSTRAINT rplcasstrageserver
+ALTER TABLE replicas DROP CONSTRAINT rplicasdestination
+ALTER TABLE files DROP CONSTRAINT FK_files_node_id
+ALTER TABLE directories DROP CONSTRAINT directoriesnode_id
+ALTER TABLE nodes DROP CONSTRAINT FK_nodes_parent
+ALTER TABLE nodes DROP CONSTRAINT UNQ_nodes_0
+ALTER TABLE locks DROP CONSTRAINT FK_locks_file
+ALTER TABLE locks DROP CONSTRAINT locksstorageserver
+ALTER TABLE storage_servers DROP CONSTRAINT UNQ_storage_servers_0
+DROP TABLE replicas
+DROP TABLE files
+DROP TABLE directories
+DROP TABLE nodes
+DROP TABLE locks
+DROP TABLE storage_servers

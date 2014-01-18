@@ -1,0 +1,373 @@
+/*
+ * To change this template, choose Tools | Templates
+ * and open the template in the editor.
+ */
+
+package org.sodfs.meta.server;
+
+import java.io.FileNotFoundException;
+import java.io.IOException;
+
+import java.io.Serializable;
+import java.util.List;
+import org.sodfs.meta.api.MetaServerInterface;
+import java.rmi.RemoteException;
+import java.util.ArrayList;
+import java.util.Date;
+import javax.persistence.Persistence;
+import javax.persistence.EntityManagerFactory;
+import javax.persistence.EntityManager;
+import javax.persistence.EntityTransaction;
+import javax.persistence.Query;
+import org.alfresco.jlan.server.filesys.FileAttribute;
+import org.alfresco.jlan.server.filesys.FileStatus;
+import org.sodfs.meta.api.entities.DirectoryEntity;
+import org.sodfs.meta.api.entities.FileEntity;
+import org.sodfs.meta.persistance.StorageServer;
+import org.sodfs.meta.api.entities.StorageServerEntity;
+import org.sodfs.meta.persistance.Directory;
+import org.sodfs.meta.persistance.File;
+
+/**
+ *
+ * @author Roman
+ */
+public class MetaServerRemoteObject implements MetaServerInterface {
+    
+    private EntityManagerFactory emf;  
+    private EntityManager em;
+    
+    private String persistanceUnit;
+    
+    public MetaServerRemoteObject(String persistanceUnit) {
+        this.persistanceUnit = persistanceUnit;
+        emf = Persistence.createEntityManagerFactory(persistanceUnit);
+        em = emf.createEntityManager(); 
+    }
+    
+    public void stop() {
+        emf.close();
+        em.close();
+    }
+
+    public StorageServerEntity registerStorageServer(String name, String address, int port) {
+        EntityTransaction t = em.getTransaction();
+        t.begin();
+        try {
+            StorageServer result = null;
+            Query q = em.createNamedQuery("StorageServer.findByName");
+            q.setParameter("name", name);
+            List resultList = q.getResultList();
+            if (resultList.isEmpty()) {
+                result = new StorageServer();
+                result.setAddress(address);
+                result.setPort(port);
+                result.setName(name);
+                em.persist(result);            
+            }
+            else {
+                result = (StorageServer) resultList.get(0);
+            }
+            t.commit();       
+            return result;
+        } finally {
+            if (t.isActive()) t.rollback();
+        }
+    }
+
+    public ArrayList<FileEntity> listFilesFromDirectory(String path, String separator, int attr) throws RemoteException, FileNotFoundException {
+        // TODO: Check also for attribute param
+         
+        ArrayList<FileEntity> result = new ArrayList<FileEntity>();
+        EntityTransaction t = em.getTransaction();
+        t.begin();
+        try {
+            em.clear();        
+            Directory dir = findDirectory(em,path);
+            if (dir == null) throw new java.io.FileNotFoundException();
+            em.refresh(dir);
+            result.addAll(dir.getFileCollection());        
+            t.commit();        
+            return result;
+        } finally {
+            if (t.isActive()) t.rollback();
+        }
+
+    }
+
+    private Directory findDirectory(EntityManager em, String path) {        
+        Directory dir = getRoot(em);
+        Query q = em.createQuery("SELECT d FROM Directory d WHERE d.name = :name AND d.parent.directoryId = :id");
+        String[] pathDir = path.split("\\\\");
+        for (int i = 1; dir != null && i < pathDir.length; i++) {
+            q.setParameter("name", pathDir[i]);
+            q.setParameter("id", dir.getDirectoryId());
+
+            List list = q.getResultList();          
+            if (list.size() == 0) {
+                dir = null;
+            } else {
+                dir = (Directory) q.getResultList().get(0);
+            }
+        }
+        if (dir != null) em.refresh(dir);
+        return dir;
+    }
+
+    private Directory getRoot(EntityManager em) {
+        Query rootQuery = em.createNamedQuery("Directory.findByDirectoryId");
+        rootQuery.setParameter("directoryId", 0);
+        Directory dir = (Directory) rootQuery.getResultList().get(0);
+        return dir;
+    }
+
+    public ArrayList<DirectoryEntity> listSubDirectoriesFromDirectory(String path, String separator, int attr) throws RemoteException, FileNotFoundException {
+        // TODO: Check attribute consistency
+        ArrayList<DirectoryEntity> result = new ArrayList<DirectoryEntity>();
+        EntityTransaction t = em.getTransaction();
+        t.begin();
+        try {
+            em.clear();        
+            Directory dir = findDirectory(em,path);
+            if (dir == null) throw new java.io.FileNotFoundException();
+            em.refresh(dir);  
+            for (Directory directory : dir.getDirectoryCollection()) {
+                em.refresh(directory);
+            }
+            result.addAll(dir.getDirectoryCollection());   
+            t.commit();
+            return result;
+        } finally {
+            if (t.isActive()) t.rollback();
+        }
+
+    }
+
+    public void createDirectory(String path, String name, int attr) throws RemoteException, java.io.IOException {                
+        System.out.println("[createDirectory] " + path + " " + name);
+        EntityTransaction t = em.getTransaction();
+        t.begin();
+        try {
+            Directory parent;            
+            parent = findDirectory(em, path);            
+            if (parent == null) {    
+                throw new java.io.IOException();
+            }
+            Directory newDir = new Directory();
+            newDir.setName(name);
+            newDir.setAccessed(new Date());
+            newDir.setCreated(new Date());
+            newDir.setModified(new Date());
+            newDir.setNominalSize(0);
+            newDir.setAllocationSize(0);        
+            newDir.setAttribute(attr);
+            newDir.setParent(parent);
+            try {
+                em.persist(newDir);
+            }
+            catch(Exception e) {
+                throw new IOException();
+            }
+            t.commit();
+        } finally {
+            if (t.isActive()) t.rollback();
+        }
+
+    }
+
+    public int fileExist(String path) {
+        System.out.println("[getFileExist] " + path);
+        int result = FileStatus.NotExist;
+        EntityTransaction t = em.getTransaction();
+        t.begin();
+        try {
+            Directory dir = findDirectory(em, path);
+            if (dir == null)
+            {            
+                String parent;
+                String name;           
+                int i = path.lastIndexOf("\\");
+                name = path.substring(i + 1, path.length());
+                if (i > 0) {            
+                    parent = path.substring(0,i);
+                } else {
+                    parent = "\\";
+                }
+                System.out.println("parent: " + parent);
+                dir = findDirectory(em, parent);
+                if (dir != null) {
+                    Query q = em.createQuery("SELECT f FROM File f WHERE f.name = :name AND f.parent = :parent");
+                    q.setParameter("name", name);
+                    q.setParameter("parent", dir);
+                    if (q.getResultList().size() > 0) 
+                        result = FileStatus.FileExists;
+                }
+            } else {
+                result = FileStatus.DirectoryExists;
+            }
+            t.commit();
+            return result;            
+        } finally {
+            if (t.isActive()) t.rollback();
+        }
+    }
+
+    public Serializable getFileInformation(String path) throws RemoteException, FileNotFoundException {
+        System.out.println("[getFileInformation] " + path);
+        Serializable result = null;
+        EntityTransaction t = em.getTransaction();
+        t.begin();
+        try {
+            Directory dir = findDirectory(em, path);
+            if (dir == null)
+            {            
+                String parent;
+                String name;           
+                int i = path.lastIndexOf("\\");
+                name = path.substring(i + 1, path.length());
+                if (i > 0) {            
+                    parent = path.substring(0,i);
+                } else {
+                    parent = "\\";
+                }
+                dir = findDirectory(em, parent);
+                if (dir != null) {
+                    Query q = em.createQuery("SELECT f FROM File f WHERE f.name = :name AND f.parent = :parent");
+                    q.setParameter("name", name);
+                    q.setParameter("parent", dir);
+                    List rl = q.getResultList();
+                    if (!rl.isEmpty()) {
+                        result = (File) rl.get(0);                        
+                    } 
+                    else {
+                        throw new FileNotFoundException();
+                    }
+                } else {
+                    throw new FileNotFoundException();
+                }
+            } else {
+                result = dir;
+            }
+            t.commit();
+            System.out.println("[getFileInformation] " + path + " " + result);
+            return result;
+        } finally {
+            if (t.isActive()) t.rollback();
+        }
+    }
+
+    public void renameFile(String oldPath, String newPath) throws RemoteException, FileNotFoundException {        
+        System.out.println("[renameFile] " + oldPath + " " + newPath);
+        EntityTransaction t = em.getTransaction();
+        try {                
+            String name;           
+            int i = newPath.lastIndexOf("\\");
+            name = newPath.substring(i + 1, newPath.length());          
+            Serializable s = getFileInformation(oldPath);
+            if (s != null) {
+                if (s instanceof Directory)  {
+                    Directory sourceDirectory = sourceDirectory = (Directory) s;
+                    t.begin();
+                    em.refresh(sourceDirectory);
+                    sourceDirectory.setName(name);
+                    t.commit();
+                }
+                else if (s instanceof File) {
+                    File file = (File) s;
+                    t.begin();
+                    em.refresh(file);
+                    Directory parent = file.getParent();
+                    em.refresh(parent);
+                    file.setName(name);                    
+                    t.commit();
+                }
+            }            
+        } finally {
+            if (t.isActive()) t.rollback();
+        }
+
+    }
+
+    public void deleteDirectory(String path) throws RemoteException, IOException {
+        System.out.println("[deleteDirectory] " + path);
+        EntityTransaction t = em.getTransaction();
+        t.begin();
+        try {
+            Directory dir;            
+            dir = findDirectory(em, path);            
+            if (dir == null) {    
+                throw new java.io.IOException();
+            }
+            try {
+                em.remove(dir);
+            }
+            catch(Exception e) {
+                throw new IOException(e.getMessage());
+            }
+            t.commit();
+        } finally {
+            if (t.isActive()) t.rollback();
+        }
+    }
+
+    public void createFile(String name, String path) throws RemoteException, IOException {
+        System.out.println("[createFile] " + path + "\\" + name);
+        EntityTransaction t = em.getTransaction();
+        t.begin();
+        try {
+            Directory parent;            
+            parent = findDirectory(em, path);            
+            if (parent == null) {    
+                throw new java.io.IOException();
+            }
+            File newDir = new File();
+            newDir.setName(name);
+            newDir.setAccessed(new Date());
+            newDir.setCreated(new Date());
+            newDir.setChanged(new Date());
+            newDir.setModified(new Date());
+            newDir.setNominalSize(0);
+            newDir.setAllocationSize(0);        
+            //newDir.setAttribute(FileAttribute.);
+            newDir.setParent(parent);
+            try {
+                em.persist(newDir);
+            }
+            catch(Exception e) {
+                throw new IOException();
+            }
+            t.commit();
+        } finally {
+            if (t.isActive()) t.rollback();
+        }
+    }
+
+    public void deleteFile(String path, String name) throws RemoteException, IOException {
+        System.out.println("[deleteFile] " + path + "\\" + name);
+        EntityTransaction t = em.getTransaction();
+        t.begin();
+        try {
+            Directory dir;            
+            dir = findDirectory(em, path);            
+            if (dir != null) {
+                Query q = em.createQuery("SELECT f FROM File f WHERE f.name = :name AND f.parent = :parent");
+                q.setParameter("name", name);
+                q.setParameter("parent", dir);
+                List rl = q.getResultList();
+                if (!rl.isEmpty()) {
+                    em.remove(rl.get(0));                        
+                } 
+                else {
+                    throw new FileNotFoundException();
+                }
+            } else {
+                throw new FileNotFoundException();
+            }
+            t.commit();
+        } finally {
+            if (t.isActive()) t.rollback();
+        }
+    }
+    
+
+}
