@@ -1,7 +1,7 @@
 Self-organizing Distributed File System
 =====
 
-**SoDFS** is an outcome of my Master Thesis. It is distributed file system which consist of number of nodes which stores file replicas. The SoDFS relocates the replicas according to distributed algorithm of my design. The algorithm called SoRPA (Self-organizing Replica Placement Algorithm) is decentralized - the file placement emerges form the autonomous decision of each nodes. I have developed the system during my stay at Stuttgart University and tested its performance in NET emulation testbed kindly made accessible to me by professor Kurt Rothermel.
+**SoDFS** is an outcome of my Master Thesis. It is distributed file system which consist of number of nodes which stores file replicas. The SoDFS relocates the replicas according to distributed algorithm of my design. The algorithm called SoRPA (Self-organizing Replica Placement Algorithm) is decentralized - the file placement emerges form the autonomous decision of each nodes. I have developed the system during my stay at Stuttgart University and tested its performance in NET emulation testbed.
 
 License
 --------
