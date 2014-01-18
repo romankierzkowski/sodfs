@@ -22,8 +22,8 @@ Features
 Repo 
 -----
 
-The SoDFS is run as a plugin of [Alfresco JLAN](http://sourceforge.net/projects/alfresco/files/JLAN/), which is also available under GPL. The contents of this repo:
+The SoDFS node is run as a plugin of [Alfresco JLAN](http://sourceforge.net/projects/alfresco/files/JLAN/), which is also available under GPL. The contents of this repo:
 
-* plugin - The file system engine.
+* server - The file system engine - metadata server & node plugin.
 * test-client - Test client for SoDFS. Used for performance tests.
 * master_thesis.pdf - My Master's Thesis on SoDFS.
